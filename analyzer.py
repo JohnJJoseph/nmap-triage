@@ -1,5 +1,6 @@
-"""Decide which parsed ports are real services and which are noise."""
+"""Classify parsed ports, apply exposure rules, and match known CVEs."""
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,10 +12,15 @@ IGNORED = "ignored"        # not open (closed, filtered, open|filtered ...)
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 REQUIRED_RULE_KEYS = {"id", "title", "services", "severity", "reason", "fix"}
+REQUIRED_CVE_KEYS = {"cve", "product", "cvss", "summary"}
 
 
 class RuleError(Exception):
     """Raised when rules.json is missing or malformed."""
+
+
+class CveDataError(Exception):
+    """Raised when cve_data.json is missing or malformed."""
 
 
 @dataclass
@@ -37,6 +43,19 @@ class Finding:
     reason: str
     fix: str
 
+
+@dataclass
+class CveMatch:
+    host: str
+    hostname: str
+    port: Port
+    cve: str
+    cvss: float
+    severity: str
+    summary: str
+
+
+# ---------- Step 1: false-positive filtering ----------
 
 def assess_port(host, port):
     """Label one port. 'host' is a parser.Host object."""
@@ -66,6 +85,8 @@ def assess_hosts(hosts):
             results.append(assess_port(host, port))
     return results
 
+
+# ---------- Step 2: exposure rules ----------
 
 def load_rules(path):
     """Load and validate the exposure rules from a JSON file."""
@@ -104,27 +125,64 @@ def match_rules(assessments, rules):
     return findings
 
 
-if __name__ == "__main__":  # quick manual check
-    import sys
-    from parser import parse_nmap_xml, NmapParseError
+# ---------- Step 3: CVE lookup ----------
 
-    if len(sys.argv) != 2:
-        print("Usage: python analyzer.py <scan.xml>")
-        sys.exit(1)
+def load_cves(path):
+    """Load and validate the local CVE list."""
     try:
-        assessments = assess_hosts(parse_nmap_xml(sys.argv[1]))
-        rules = load_rules(Path(__file__).with_name("rules.json"))
-    except (NmapParseError, RuleError) as exc:
-        print(f"Error: {exc}")
-        sys.exit(1)
+        entries = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CveDataError(f"Cannot load CVE data from {path}: {exc}") from exc
+    for e in entries:
+        missing = REQUIRED_CVE_KEYS - e.keys()
+        if missing:
+            raise CveDataError(f"CVE entry {e.get('cve', '?')} is missing: {sorted(missing)}")
+        if "versions" not in e and "ranges" not in e:
+            raise CveDataError(f"CVE entry {e['cve']} needs 'versions' or 'ranges'")
+    return entries
 
-    print("Port status:")
+
+def parse_version(text):
+    """'2.2.8' -> (2, 2, 8). Anything not purely numeric (e.g. '3.X - 4.X') -> None."""
+    if re.fullmatch(r"\d+(\.\d+)*", text):
+        return tuple(int(p) for p in text.split("."))
+    return None
+
+
+def version_matches(version, entry):
+    """True if 'version' is in the entry's exact list or inside one of its ranges."""
+    if version in entry.get("versions", []):
+        return True
+    v = parse_version(version)
+    if v is None:
+        return False  # cannot compare, so do not guess
+    for r in entry.get("ranges", []):
+        if parse_version(r.get("from", "0")) <= v < parse_version(r["before"]):
+            return True
+    return False
+
+
+def cvss_to_severity(score):
+    """Standard CVSS v3 severity bands."""
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    return "low"
+
+
+def match_cves(assessments, cves):
+    """Potential, version-based matches. Skips ports with no known version."""
+    matches = []
     for a in assessments:
-        line = f"  {a.host} {a.port.number}/{a.port.protocol} [{a.status}] {a.port.service}"
-        if a.reason:
-            line += f" - {a.reason}"
-        print(line)
-
-    print("Findings:")
-    for f in match_rules(assessments, rules):
-        print(f"  [{f.severity.upper()}] {f.host} {f.port.number}/{f.port.protocol} {f.title}")
+        if a.status != OPEN or not a.version_known:
+            continue
+        product = a.port.product.lower()
+        for e in cves:
+            if e["product"].lower() in product and version_matches(a.port.version, e):
+                matches.append(CveMatch(a.host, a.hostname, a.port, e["cve"], e["cvss"],
+                                        cvss_to_severity(e["cvss"]), e["summary"]))
+    matches.sort(key=lambda m: (-m.cvss, m.host, m.port.number))
+    return matches
