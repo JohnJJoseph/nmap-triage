@@ -19,6 +19,7 @@ class Port:
     product: str = ""
     version: str = ""
     extrainfo: str = ""
+    tunnel: str = ""
     cpes: list = field(default_factory=list)
 
 
@@ -82,6 +83,7 @@ def _parse_port(port_el):
         port.product = svc.get("product", "")
         port.version = svc.get("version", "")
         port.extrainfo = svc.get("extrainfo", "")
+        port.tunnel = svc.get("tunnel", "")
         port.cpes = [c.text.strip() for c in svc.findall("cpe") if c.text]
     return port
 
