@@ -30,6 +30,12 @@ Ports: 2 confirmed open, 0 unverified, 1 ignored.
 
 - 192.168.56.101 (metasploitable) 23/tcp `telnet`: no version detected, needs manual check
 
+## Open services with no rule or CVE match
+
+These were not matched, which does not mean they are safe. Versions that are not plain numbers (for example `4.7p1` or `3.X - 4.X`) cannot be compared, so they are never guessed.
+
+None.
+
 ## Ignored ports
 
 - 192.168.56.101 (metasploitable) 8080/tcp `http-proxy`: state is 'filtered', not a confirmed open service

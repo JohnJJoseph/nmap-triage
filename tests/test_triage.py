@@ -126,3 +126,25 @@ def test_real_scan_known_cves_present():
     _, _, cves = run("metasploitable.xml")
     found = {(m.cve, m.port.number) for m in cves}
     assert {("CVE-2011-2523", 21), ("CVE-2017-7679", 80), ("CVE-2010-4221", 2121)} <= found
+
+def test_service_name_is_case_insensitive():
+    _, findings, _ = run("metasploitable.xml")
+    assert 6000 in [f.port.number for f in findings]
+
+
+def test_real_scan_does_not_guess_non_numeric_versions():
+    _, _, cves = run("metasploitable.xml")
+    assert not any(m.port.number in (22, 139, 445, 3306, 5432) for m in cves)
+
+
+def test_real_scan_known_cves_present():
+    _, _, cves = run("metasploitable.xml")
+    found = {(m.cve, m.port.number) for m in cves}
+    assert {("CVE-2011-2523", 21), ("CVE-2017-7679", 80), ("CVE-2010-4221", 2121)} <= found
+
+
+def test_report_lists_open_services_without_match():
+    a, f, c = run("metasploitable.xml")
+    text = build_report("metasploitable.xml", a, f, c)
+    section = text.split("## Open services with no rule or CVE match")[1].split("## Ignored ports")[0]
+    assert "22/tcp" in section and "53/tcp" in section
