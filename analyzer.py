@@ -104,10 +104,11 @@ def load_rules(path):
 
 
 def service_key(port):
-    """Nmap reports HTTPS as service 'http' with tunnel 'ssl'. Treat it as https."""
-    if port.service == "http" and port.tunnel == "ssl":
+    """Lowercase the service name. Nmap reports HTTPS as 'http' + tunnel 'ssl'."""
+    name = port.service.lower()
+    if name == "http" and port.tunnel == "ssl":
         return "https"
-    return port.service
+    return name
 
 
 def match_rules(assessments, rules):

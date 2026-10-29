@@ -111,3 +111,18 @@ def test_report_matches_expected_file():
         pytest.skip("expected_report.md not generated yet")
     assessments, findings, cves = run("mini.xml")
     assert build_report("mini.xml", assessments, findings, cves) == expected.read_text(encoding="utf-8")
+
+def test_service_name_is_case_insensitive():
+    _, findings, _ = run("metasploitable.xml")
+    assert 6000 in [f.port.number for f in findings]
+
+
+def test_real_scan_does_not_guess_non_numeric_versions():
+    _, _, cves = run("metasploitable.xml")
+    assert not any(m.port.number in (22, 139, 445, 3306, 5432) for m in cves)
+
+
+def test_real_scan_known_cves_present():
+    _, _, cves = run("metasploitable.xml")
+    found = {(m.cve, m.port.number) for m in cves}
+    assert {("CVE-2011-2523", 21), ("CVE-2017-7679", 80), ("CVE-2010-4221", 2121)} <= found
