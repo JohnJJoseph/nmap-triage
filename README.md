@@ -25,6 +25,7 @@ Raw Nmap output is a flat list of ports. It does not say which ports matter most
   - Services with no version get exposure rules but **no** CVE lookup, and are listed for manual check.
   - HTTPS (`http` + `tunnel="ssl"`) is not reported as plain HTTP.
   - Non-numeric versions (`3.X - 4.X`, `4.7p1`) are never guessed or compared.
+  - Versions outside a CVE's affected range get no match (for example ProFTPD 1.3.1 and CVE-2010-4221, which affects 1.3.2 and later).
 - **13 exposure rules** in `rules.json` (Telnet, FTP, SMB, RDP, VNC, databases, r-services, bind shell, NFS/RPC, X11, Java RMI, TFTP/SNMP, plain HTTP). Matched on service name, not port number. Rules can be edited without touching Python.
 - **Local CVE lookup** from `cve_data.json` (product plus exact version or version range). Every match is labelled *potential, version-based, verify manually*.
 - Markdown report: summary table, exposure findings, CVE matches, needs-manual-check list, unmatched open services, ignored ports, limitations.
@@ -32,7 +33,7 @@ Raw Nmap output is a flat list of ports. It does not say which ports matter most
 
 ## Technology used
 
-- Python 3.10+
+- Python 3.10+ (developed and tested on Windows with Python 3.14)
 - [`defusedxml`](https://pypi.org/project/defusedxml/) (PSF licence) for safe XML parsing
 - `pytest` (MIT) for tests
 - Standard library: `argparse`, `json`, `re`, `dataclasses`, `pathlib`
@@ -74,7 +75,7 @@ Options:
 | `--cves` | Local CVE data JSON (default `cve_data.json`) |
 | `--fail-on` | `critical`, `high` (default), `medium`, `low` or `never`. Exit code `1` if a finding at or above this level exists |
 
-Run the tests:
+Run the tests (20 tests):
 
 ```
 pytest
@@ -85,6 +86,8 @@ pytest
 ```
 python nmap_triage.py samples\mini.xml -o samples\expected_report.md
 ```
+
+On Linux or macOS, use `samples/mini.xml` and `samples/expected_report.md`.
 
 ## Sample input and output
 
@@ -117,7 +120,9 @@ Port 8080 is filtered, so it appears under *Ignored ports* and produces no findi
 
 ### Real scan
 
-`samples/metasploitable.xml` is a scan of a Metasploitable 2 VM on an isolated lab network (23 open ports). The result is in `samples/metasploitable_report.md`: 1 critical exposure (bind shell on 1524), 9 high, 6 medium, 1 low, and 3 potential CVE matches (vsftpd 2.3.4, Apache 2.2.8, ProFTPD 1.3.1).
+`samples/metasploitable.xml` is a scan of a Metasploitable 2 VM on an isolated lab network (23 open ports). The result is in `samples/metasploitable_report.md`: 1 critical exposure (bind shell on 1524), 9 high, 6 medium, 1 low, and 2 potential CVE matches (vsftpd 2.3.4 and Apache 2.2.8).
+
+ProFTPD 1.3.1 on port 2121 is **not** matched to CVE-2010-4221, because that CVE affects versions 1.3.2 and later. A test covers this.
 
 ### Sample files
 
@@ -129,22 +134,25 @@ Port 8080 is filtered, so it appears under *Ignored ports* and produces no findi
 | `https.xml` | HTTPS not reported as plain HTTP |
 | `broken.xml` | Malformed XML gives a clean error and exit code 2 |
 | `metasploitable.xml` | Real lab scan |
+| `expected_report.md` | Expected output for `mini.xml` |
+| `metasploitable_report.md` | Output for the real lab scan |
 
 ## Security considerations
 
 - **XML parsing:** `defusedxml` is used instead of `xml.etree` so that malicious XML (entity expansion, "billion laughs") is rejected rather than parsed.
 - **No network activity:** the tool never scans, connects to or downloads anything. It only reads local files.
-- **Authorisation:** the samples come from a deliberately vulnerable VM on a Host-only/isolated network. Only scan systems you own or have written permission to test.
+- **Authorisation:** the samples come from a deliberately vulnerable VM on an isolated network. Only scan systems you own or have written permission to test.
 - **Reports are sensitive:** they contain IP addresses, hostnames and a list of weaknesses. Handle real reports accordingly.
 - **Input validation:** missing, empty, malformed or non-Nmap files, and malformed rule or CVE files, produce a clear error and exit code 2, not a crash.
 - **No secrets** are stored in this repository.
 
 ## Known limitations
 
-- **CVE matches are version-based and only "potential".** Linux distributions often backport fixes without changing the version string, so a match is not proof the host is vulnerable.
+- **CVE matches are version-based and only "potential".** Linux distributions often backport fixes without changing the version string, so a match is not proof the host is vulnerable. For example, CVE-2011-2523 (the vsftpd 2.3.4 backdoor) only affects one download window of the source code, and Ubuntu lists its hardy release as not affected. The lab VM is deliberately backdoored, but a version match alone would not show that on a normal system.
 - **Versions that are not plain numbers are skipped**, for example `OpenSSH 4.7p1`, `Samba 3.X - 4.X`, `PostgreSQL 8.3.0 - 8.3.7`, `MySQL 5.0.51a-...`. In the Metasploitable scan this means real vulnerabilities in those services are **not** matched. "No match" does not mean safe.
-- Letter suffixes are not handled, so a range ending at ProFTPD `1.3.3` can miss `1.3.3a` to `1.3.3c`.
+- Letter suffixes are not handled, so a range ending at ProFTPD `1.3.3` can miss `1.3.3a` to `1.3.3b`.
 - **The CVE data is tiny and hand-curated** (3 entries) and goes stale. It is not a replacement for a scanner such as Nessus or OpenVAS.
+- **Scores come from different CVSS versions.** Most entries use CVSS v3, but CVE-2010-4221 is scored with CVSS v2 (10.0), because that is what NVD publishes for it.
 - Services with no version (for example UnrealIRCd on port 6667) cannot be matched, so a known backdoor would need a manual check.
 - If the scan was run without `-sV`, Nmap guesses service names from port numbers and the results are unreliable.
 - Severity levels in `rules.json` are judgment calls, not an official standard.
