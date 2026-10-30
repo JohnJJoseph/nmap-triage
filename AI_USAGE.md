@@ -4,7 +4,7 @@
 
 Claude (Anthropic), through the claude.ai chat interface. I did not use any other AI tool.
 
-## 2. How did AI assist I?
+## 2. How did AI assist ?
 
 - **Choosing the project.** Claude compared the task's project ideas and helped me pick an Nmap XML triage tool, because it runs offline and needs no API key.
 - **Design.** Claude proposed the pipeline: parse XML, filter false positives, apply exposure rules, match CVEs, write a Markdown report.
@@ -70,4 +70,3 @@ Claude chose `defusedxml` over the standard `xml.etree` to avoid unsafe XML pars
 - **What the exit codes mean:** 0 is OK, 1 is a finding at or above `--fail-on`, and 2 is bad input.
 - **The real-scan results,** including the ProFTPD false positive and how I found it.
 
-I am less sure of the detailed version-comparison code in `analyzer.py` (`parse_version` and `version_matches`) and the Markdown formatting code in `report.py`. I understand what they do, but I would need time to walk through them line by line.
